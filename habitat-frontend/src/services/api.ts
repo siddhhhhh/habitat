@@ -37,20 +37,23 @@ class ApiService {
       (res) => res,
       async (error) => {
         const originalRequest = error.config;
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        const url: string = originalRequest?.url ?? '';
+        const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh');
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
           originalRequest._retry = true;
           try {
             const refreshToken = Cookies.get('refreshToken');
             if (!refreshToken) throw new Error('No refresh token found');
             const resp = await axios.post(`${this.api.defaults.baseURL}/auth/refresh`, { refreshToken });
-            const { accessToken } = resp.data.data;
-            Cookies.set('accessToken', accessToken, { expires: 7 });
+            const { accessToken, refreshToken: nextRefresh } = resp.data.data;
+            Cookies.set('accessToken', accessToken, { expires: 1 });
+            if (nextRefresh) Cookies.set('refreshToken', nextRefresh, { expires: 30 });
             originalRequest.headers.Authorization = `Bearer ${accessToken}`;
             return this.api(originalRequest);
           } catch {
             Cookies.remove('accessToken');
             Cookies.remove('refreshToken');
-            window.location.href = '/login';
+            if (typeof window !== 'undefined') window.location.href = '/login';
           }
         }
         return Promise.reject(error);
@@ -202,6 +205,16 @@ deleteBill(id: string) {
 
 payBill(billId: string, amount: number, gatewayRef: string) {
   return this.api.patch<ApiResponse<Bill>>(`/bills/${billId}/pay`, { amount, gatewayRef }).then(res => res.data);
+}
+
+checkoutBill(billId: string) {
+  return this.api.post<ApiResponse<{
+    keyId: string;
+    orderId: string;
+    amount: number;
+    currency: string;
+    billId: string;
+  }>>(`/bills/${billId}/checkout`).then(res => res.data);
 }
 
 generateBills(data: Array<{

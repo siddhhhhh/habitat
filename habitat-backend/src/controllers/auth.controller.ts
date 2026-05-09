@@ -1,4 +1,3 @@
-// src/controllers/auth.controller.ts
 import { Request, Response } from "express";
 import { successResponse, errorResponse } from "../utils/responses";
 import * as AuthService from "../services/auth.service";
@@ -11,13 +10,18 @@ export const register = async (req: Request, res: Response) => {
     if (error) return errorResponse(res, error.details[0].message, 400);
 
     const user = await AuthService.createUser(value);
-    const token = AuthService.generateToken(user);
+    const token = AuthService.generateAccessToken(user);
+    const { raw: refreshToken } = await AuthService.issueRefreshToken(String(user._id));
 
-    // ✅ Convert Mongoose document to plain JS object safely
     const safeUser = user.toObject() as Record<string, any>;
     delete safeUser.password;
 
-    return successResponse(res, { user: safeUser, token }, "User registered", 201);
+    return successResponse(
+      res,
+      { user: safeUser, token, refreshToken },
+      "User registered",
+      201
+    );
   } catch (err: any) {
     return errorResponse(res, err.message || "Registration failed", 400);
   }
@@ -30,19 +34,58 @@ export const login = async (req: Request, res: Response) => {
 
     const user = await User.findOne({ email: value.email });
     if (!user) return errorResponse(res, "Invalid credentials", 401);
+    if (!user.isActive) return errorResponse(res, "Account disabled", 401);
 
     const valid = await AuthService.validatePassword(value.password, user.password);
     if (!valid) return errorResponse(res, "Invalid credentials", 401);
 
-    const token = AuthService.generateToken(user);
+    const token = AuthService.generateAccessToken(user);
+    const { raw: refreshToken } = await AuthService.issueRefreshToken(String(user._id));
 
-    // ✅ Convert Mongoose document to plain JS object safely
     const safeUser = user.toObject() as Record<string, any>;
     delete safeUser.password;
 
-    return successResponse(res, { user: safeUser, token }, "Logged in successfully");
+    return successResponse(
+      res,
+      { user: safeUser, token, refreshToken },
+      "Logged in successfully"
+    );
   } catch (err: any) {
     return errorResponse(res, err.message || "Login failed", 400);
+  }
+};
+
+export const refresh = async (req: Request, res: Response) => {
+  try {
+    const presented = req.body?.refreshToken;
+    if (!presented || typeof presented !== "string") {
+      return errorResponse(res, "refreshToken is required", 400);
+    }
+
+    const { user, access, refresh: nextRefresh } = await AuthService.rotateRefreshToken(presented);
+
+    const safeUser = user.toObject() as Record<string, any>;
+    delete safeUser.password;
+
+    return successResponse(
+      res,
+      { user: safeUser, accessToken: access, refreshToken: nextRefresh },
+      "Token refreshed"
+    );
+  } catch (err: any) {
+    return errorResponse(res, err.message || "Refresh failed", 401);
+  }
+};
+
+export const logout = async (req: Request, res: Response) => {
+  try {
+    const presented = req.body?.refreshToken;
+    if (presented && typeof presented === "string") {
+      await AuthService.revokeRefreshToken(presented);
+    }
+    return successResponse(res, null, "Logged out");
+  } catch (err: any) {
+    return errorResponse(res, err.message || "Logout failed", 400);
   }
 };
 

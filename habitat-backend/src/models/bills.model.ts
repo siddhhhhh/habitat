@@ -1,10 +1,11 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document } from "mongoose";
 
 export enum PaymentStatus {
-  PENDING = 'pending',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-  REFUNDED = 'refunded'
+  PENDING = "pending",
+  PROCESSING = "processing",
+  COMPLETED = "completed",
+  FAILED = "failed",
+  REFUNDED = "refunded",
 }
 
 export interface IBills extends Document {
@@ -13,18 +14,36 @@ export interface IBills extends Document {
   amount: number;
   dueDate: Date;
   status: PaymentStatus;
+  provider?: string;
+  providerOrderId?: string;
+  providerPaymentId?: string;
   gatewayRef?: string;
+  paidAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-const billsSchema: Schema = new Schema({
-  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  description: { type: String, required: true },
-  amount: { type: Number, required: true },
-  dueDate: { type: Date, required: true },
-  status: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.PENDING },
-  gatewayRef: { type: String } // stores payment gateway reference if paid
-}, { timestamps: true });
+const billsSchema = new Schema<IBills>(
+  {
+    user: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    description: { type: String, required: true },
+    amount: { type: Number, required: true, min: 0 },
+    dueDate: { type: Date, required: true },
+    status: {
+      type: String,
+      enum: Object.values(PaymentStatus),
+      default: PaymentStatus.PENDING,
+      index: true,
+    },
+    provider: { type: String },
+    providerOrderId: { type: String, index: true, sparse: true },
+    providerPaymentId: { type: String, index: true, sparse: true },
+    gatewayRef: { type: String },
+    paidAt: { type: Date },
+  },
+  { timestamps: true }
+);
 
-export default mongoose.model<IBills>('Bills', billsSchema);
+billsSchema.index({ user: 1, status: 1, dueDate: -1 });
+
+export default mongoose.model<IBills>("Bills", billsSchema);

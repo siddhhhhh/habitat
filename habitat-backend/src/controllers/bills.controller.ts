@@ -58,8 +58,8 @@ export class BillsController {
   async payBill(_req: Request, res: Response) {
     try {
       const { amount, gatewayRef } = _req.body;
-      const data = await service.payBill(_req.params.id, amount, gatewayRef);
-      res.json({ success: true, data }); // ✅ Wrapped
+      const data = await service.payBillManual(_req.params.id, amount, gatewayRef);
+      res.json({ success: true, data });
     } catch (err: any) {
       res.status(400).json({ success: false, message: err.message });
     }

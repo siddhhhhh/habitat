@@ -1,8 +1,28 @@
-import BillsModel, { IBills, PaymentStatus } from '../models/bills.model';
+import BillsModel, { IBills, PaymentStatus } from "../models/bills.model";
 
 interface GetBillsParams {
   userId?: string;
   status?: PaymentStatus | string;
+}
+
+const ALLOWED_TRANSITIONS: Record<PaymentStatus, PaymentStatus[]> = {
+  [PaymentStatus.PENDING]: [PaymentStatus.PROCESSING, PaymentStatus.FAILED],
+  [PaymentStatus.PROCESSING]: [PaymentStatus.COMPLETED, PaymentStatus.FAILED, PaymentStatus.PENDING],
+  [PaymentStatus.COMPLETED]: [PaymentStatus.REFUNDED],
+  [PaymentStatus.FAILED]: [PaymentStatus.PENDING],
+  [PaymentStatus.REFUNDED]: [],
+};
+
+export class BillStateError extends Error {
+  constructor(
+    message: string,
+    public readonly billId: string,
+    public readonly from?: PaymentStatus,
+    public readonly to?: PaymentStatus
+  ) {
+    super(message);
+    this.name = "BillStateError";
+  }
 }
 
 export class BillsService {
@@ -10,14 +30,11 @@ export class BillsService {
     const query: any = {};
     if (params?.userId) query.user = params.userId;
     if (params?.status) query.status = params.status;
-
-    return BillsModel.find(query)
-      .populate('user', 'name flatNumber')
-      .sort({ createdAt: -1 });
+    return BillsModel.find(query).populate("user", "name flatNumber").sort({ createdAt: -1 });
   }
 
   async getById(id: string) {
-    return BillsModel.findById(id).populate('user', 'name flatNumber');
+    return BillsModel.findById(id).populate("user", "name flatNumber");
   }
 
   async create(data: Partial<IBills>) {
@@ -25,28 +42,81 @@ export class BillsService {
   }
 
   async update(id: string, data: Partial<IBills>) {
-    return BillsModel.findByIdAndUpdate(id, data, { new: true }).populate('user', 'name flatNumber');
+    return BillsModel.findByIdAndUpdate(id, data, { new: true }).populate("user", "name flatNumber");
   }
 
   async delete(id: string) {
     return BillsModel.findByIdAndDelete(id);
   }
 
-  // ---------------- Custom Payment Logic ----------------
-  async payBill(id: string, amount: number, gatewayRef: string) {
-    const bill = await BillsModel.findById(id);
-    if (!bill) throw new Error('Bill not found');
-    if (bill.status !== PaymentStatus.PENDING) throw new Error('Bill already paid or closed');
-    if (amount < bill.amount) throw new Error('Amount cannot be less than bill amount');
-
-    bill.status = PaymentStatus.COMPLETED;
-    bill.gatewayRef = gatewayRef;
-    await bill.save();
-
-    return bill;
-  }
-
   async generateBills(billsData: { user: string; description: string; amount: number; dueDate: Date }[]) {
     return BillsModel.insertMany(billsData);
+  }
+
+  /**
+   * Transition a bill to a new status using a guarded findOneAndUpdate so the
+   * filter contains the expected current status. If the document has already
+   * moved on (concurrent webhook, race), the update returns null and we throw —
+   * preventing illegal or duplicate transitions.
+   */
+  async transition(
+    billId: string,
+    from: PaymentStatus,
+    to: PaymentStatus,
+    extra: Partial<IBills> = {}
+  ): Promise<IBills> {
+    if (!ALLOWED_TRANSITIONS[from]?.includes(to)) {
+      throw new BillStateError(`Illegal transition ${from} → ${to}`, billId, from, to);
+    }
+
+    const updated = await BillsModel.findOneAndUpdate(
+      { _id: billId, status: from },
+      { $set: { status: to, ...extra } },
+      { new: true }
+    );
+
+    if (!updated) {
+      throw new BillStateError(
+        `Bill not in expected state '${from}' (concurrent update or not found)`,
+        billId,
+        from,
+        to
+      );
+    }
+
+    return updated;
+  }
+
+  async markProcessing(billId: string, providerOrderId: string, provider = "razorpay") {
+    return this.transition(billId, PaymentStatus.PENDING, PaymentStatus.PROCESSING, {
+      provider,
+      providerOrderId,
+    });
+  }
+
+  async markPaid(billId: string, providerPaymentId: string) {
+    return this.transition(billId, PaymentStatus.PROCESSING, PaymentStatus.COMPLETED, {
+      providerPaymentId,
+      gatewayRef: providerPaymentId,
+      paidAt: new Date(),
+    });
+  }
+
+  async markFailed(billId: string, from: PaymentStatus = PaymentStatus.PROCESSING) {
+    return this.transition(billId, from, PaymentStatus.FAILED);
+  }
+
+  /**
+   * Manual override (admin/committee) — keeps the legacy /pay endpoint working.
+   * Goes pending → processing → completed in one shot but still validates state.
+   */
+  async payBillManual(id: string, amount: number, gatewayRef: string) {
+    const bill = await BillsModel.findById(id);
+    if (!bill) throw new Error("Bill not found");
+    if (bill.status !== PaymentStatus.PENDING) throw new Error("Bill already paid or closed");
+    if (amount < bill.amount) throw new Error("Amount cannot be less than bill amount");
+
+    const processing = await this.markProcessing(id, gatewayRef, "manual");
+    return this.markPaid(processing._id as string, gatewayRef);
   }
 }

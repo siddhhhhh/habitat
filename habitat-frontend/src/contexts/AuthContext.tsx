@@ -87,9 +87,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       }
 
-      const { user, token } = response.data;
+      const { user, token, refreshToken } = response.data as any;
       setUser(user);
-      Cookies.set('accessToken', token, { expires: 7 });
+      Cookies.set('accessToken', token, { expires: 1 });
+      if (refreshToken) Cookies.set('refreshToken', refreshToken, { expires: 30 });
       toast.success('Login successful!');
       return true;
     } catch (error: any) {
@@ -117,9 +118,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       }
 
-      const { user, token } = response.data;
+      const { user, token, refreshToken } = response.data as any;
       setUser(user);
-      Cookies.set('accessToken', token, { expires: 7 });
+      Cookies.set('accessToken', token, { expires: 1 });
+      if (refreshToken) Cookies.set('refreshToken', refreshToken, { expires: 30 });
       toast.success(response.message || 'Registration successful!');
       return true;
     } catch (error: any) {

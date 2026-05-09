@@ -133,6 +133,51 @@ export default function BillsPage() {
     setShowPayModal(true);
   };
 
+  const loadRazorpaySdk = () =>
+    new Promise<void>((resolve, reject) => {
+      if (typeof window === 'undefined') return reject(new Error('Window unavailable'));
+      if ((window as any).Razorpay) return resolve();
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Razorpay SDK'));
+      document.body.appendChild(script);
+    });
+
+  const handleRazorpayPay = async (bill: Bill) => {
+    try {
+      const resp = await apiService.checkoutBill(bill._id);
+      if (!resp.success) throw new Error(resp.message || 'Checkout failed');
+      const { keyId, orderId, amount, currency } = resp.data;
+
+      await loadRazorpaySdk();
+      const rzp = new (window as any).Razorpay({
+        key: keyId,
+        order_id: orderId,
+        amount,
+        currency,
+        name: 'Habitat Society',
+        description: bill.description,
+        handler: () => {
+          toast.success('Payment received — confirming…');
+          setTimeout(fetchBills, 2000);
+        },
+        modal: { ondismiss: fetchBills },
+        prefill: { name: user?.name, email: user?.email },
+        theme: { color: '#3b82f6' },
+      });
+      rzp.open();
+    } catch (err: any) {
+      if (err.response?.status === 503) {
+        toast('Razorpay not configured — using manual entry.', { icon: 'ℹ️' });
+        openPayModal(bill);
+        return;
+      }
+      console.error('❌ Razorpay checkout error:', err);
+      toast.error('Could not start checkout');
+    }
+  };
+
   const handlePayBill = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBill) return;
@@ -364,7 +409,7 @@ export default function BillsPage() {
                       <TableCell>
                         {user.role?.toString().toLowerCase() === UserRole.RESIDENT.toString().toLowerCase() &&
  (bill.status?.toString().toLowerCase() === PaymentStatus.PENDING.toString().toLowerCase()) && (
-  <Button variant="outline" size="sm" onClick={() => openPayModal(bill)}>
+  <Button variant="outline" size="sm" onClick={() => handleRazorpayPay(bill)}>
     Pay Now
   </Button>
 )}
