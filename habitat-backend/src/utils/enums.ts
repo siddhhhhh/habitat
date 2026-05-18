@@ -2,6 +2,7 @@
 export enum UserRole {
   Admin = "admin",
   Resident = "resident",
+  Tenant = "tenant",
   Committee = "committee",
   Security = "security",
   Technician = "technician"

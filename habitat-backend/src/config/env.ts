@@ -39,6 +39,12 @@ export const env = {
   RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ?? "",
   RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ?? "",
   RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET ?? "",
+  REDIS_URL: process.env.REDIS_URL ?? "",
+  ENABLE_WORKERS: (process.env.ENABLE_WORKERS ?? "true").toLowerCase() !== "false",
+  LOG_LEVEL: process.env.LOG_LEVEL ?? "info",
+  SENTRY_DSN: process.env.SENTRY_DSN ?? "",
+  OTEL_EXPORTER_OTLP_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "",
+  OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME ?? "habitat-backend",
 } as const;
 
 export const razorpayConfigured = () =>
@@ -46,4 +52,11 @@ export const razorpayConfigured = () =>
 
 export const razorpayWebhookConfigured = () => Boolean(env.RAZORPAY_WEBHOOK_SECRET);
 
+export const redisConfigured = () => Boolean(env.REDIS_URL);
+
+export const sentryConfigured = () => Boolean(env.SENTRY_DSN);
+
+export const otelConfigured = () => Boolean(env.OTEL_EXPORTER_OTLP_ENDPOINT);
+
 export const isProd = env.NODE_ENV === "production";
+export const isTest = env.NODE_ENV === "test";

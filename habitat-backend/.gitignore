@@ -6,3 +6,10 @@ venv/
 env/
 .venv/
 .claude
+
+# Build output
+dist/
+
+# Test artifacts
+coverage/
+.mongo-uri

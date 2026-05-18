@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRealtime } from '@/contexts/RealtimeContext';
+import { RealtimeEvents } from '@/lib/realtimeEvents';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -19,6 +21,7 @@ import toast from 'react-hot-toast';
 
 export default function IssuesPage() {
   const { hasPermission } = useAuth();
+  const { on: subscribeRealtime } = useRealtime();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,6 +52,13 @@ export default function IssuesPage() {
     fetchIssues();
     fetchTechnicians();
   }, []);
+
+  // Refresh on backend `issue.updated` so staff see new reports and reporters
+  // see status changes without a manual click.
+  useEffect(() => {
+    const off = subscribeRealtime(RealtimeEvents.IssueUpdated, () => fetchIssues());
+    return () => off();
+  }, [subscribeRealtime]);
 
   const fetchIssues = async () => {
     try {

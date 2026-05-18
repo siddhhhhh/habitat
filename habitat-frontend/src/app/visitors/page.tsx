@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRealtime } from '@/contexts/RealtimeContext';
+import { RealtimeEvents } from '@/lib/realtimeEvents';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +19,7 @@ import toast from 'react-hot-toast';
 
 export default function VisitorsPage() {
   const { hasPermission } = useAuth();
+  const { on: subscribeRealtime } = useRealtime();
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,6 +39,12 @@ export default function VisitorsPage() {
     if (!hasPermission('visitors:read')) return;
     fetchVisitors();
   }, []);
+
+  // Refresh when security/admin logs a visitor in or checks one out.
+  useEffect(() => {
+    const off = subscribeRealtime(RealtimeEvents.VisitorAlert, () => fetchVisitors());
+    return () => off();
+  }, [subscribeRealtime]);
 
   const fetchVisitors = async () => {
     try {

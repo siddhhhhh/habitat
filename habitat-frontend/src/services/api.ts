@@ -66,7 +66,16 @@ class ApiService {
     return this.api.post<AuthResponse>('/auth/login', { email, password }).then(res => res.data);
   }
 
-  register(userData: { email: string; password: string; name: string; role: string; flatNumber?: string }) {
+  register(userData: {
+    email: string;
+    password: string;
+    name: string;
+    role: string;
+    flatNumber?: string;
+    building?: string;
+    occupantsCount?: number;
+    profile?: string;
+  }) {
     return this.api.post<AuthResponse>('/auth/register', userData).then(res => res.data);
   }
 

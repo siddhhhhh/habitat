@@ -1,1 +1,0 @@
-{"version":3,"file":"amenities.model.js","sourceRoot":"","sources":["../../src/models/amenities.model.ts"],"names":[],"mappings":";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;AAAA,qDAAsD;AAQtD,MAAM,eAAe,GAAW,IAAI,iBAAM,CAAC;IACvC,IAAI,EAAE,EAAE,IAAI,EAAE,MAAM,EAAE,QAAQ,EAAE,IAAI,EAAE;CACzC,EAAE,EAAE,UAAU,EAAE,IAAI,EAAE,CAAC,CAAC;AAEzB,kBAAe,kBAAQ,CAAC,KAAK,CAAa,WAAW,EAAE,eAAe,CAAC,CAAC"}

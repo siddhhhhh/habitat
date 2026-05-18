@@ -1,8 +1,17 @@
 import AmenitiesModel, { IAmenities } from '../models/amenities.model';
+import { CacheTags, getOrSet, invalidateTag } from '../cache';
+
+const AMENITIES_LIST_KEY = 'amenities:list';
+const AMENITIES_LIST_TTL = 60; // seconds — amenity inventory changes rarely.
 
 export class AmenitiesService {
     async getAll(): Promise<IAmenities[]> {
-        return AmenitiesModel.find();
+        return getOrSet(
+            AMENITIES_LIST_KEY,
+            AMENITIES_LIST_TTL,
+            () => AmenitiesModel.find().lean<IAmenities[]>(),
+            [CacheTags.Amenities]
+        );
     }
 
     async getById(id: string) {
@@ -10,14 +19,20 @@ export class AmenitiesService {
     }
 
     async create(data: Partial<IAmenities>) {
-        return AmenitiesModel.create(data);
+        const created = await AmenitiesModel.create(data);
+        await invalidateTag(CacheTags.Amenities);
+        return created;
     }
 
     async update(id: string, data: Partial<IAmenities>) {
-        return AmenitiesModel.findByIdAndUpdate(id, data, { new: true });
+        const updated = await AmenitiesModel.findByIdAndUpdate(id, data, { new: true });
+        await invalidateTag(CacheTags.Amenities);
+        return updated;
     }
 
     async delete(id: string) {
-        return AmenitiesModel.findByIdAndDelete(id);
+        const deleted = await AmenitiesModel.findByIdAndDelete(id);
+        await invalidateTag(CacheTags.Amenities);
+        return deleted;
     }
 }

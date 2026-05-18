@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRealtime } from '@/contexts/RealtimeContext';
+import { RealtimeEvents } from '@/lib/realtimeEvents';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -24,6 +26,7 @@ import toast from 'react-hot-toast';
 
 export default function BookingsPage() {
   const { user, hasPermission } = useAuth();
+  const { on: subscribeRealtime } = useRealtime();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [amenities, setAmenities] = useState<Amenity[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -36,6 +39,13 @@ export default function BookingsPage() {
     if (!hasPermission('bookings:read')) return;
     fetchAllData();
   }, []);
+
+  // Refresh when staff approve/reject (resident sees the decision)
+  // or when a resident creates a new booking (staff sees it appear).
+  useEffect(() => {
+    const off = subscribeRealtime(RealtimeEvents.BookingDecision, () => fetchAllData());
+    return () => off();
+  }, [subscribeRealtime]);
 
   const fetchAllData = async () => {
     try {

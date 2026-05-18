@@ -6,3 +6,16 @@ venv/
 env/
 .venv/
 .claude
+
+# Next.js build output
+.next/
+out/
+next-env.d.ts
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
+
+# Coverage
+coverage/

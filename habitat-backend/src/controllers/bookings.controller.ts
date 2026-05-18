@@ -1,7 +1,20 @@
 import { Request, Response } from 'express';
 import { BookingsService } from '../services/bookings.service';
+import { emitToRoles, emitToUser, RealtimeEvents } from '../realtime/events';
+import { UserRole } from '../utils/enums';
 
 const service = new BookingsService();
+
+const STAFF_ROLES = [UserRole.Admin, UserRole.Committee];
+
+const refId = (val: unknown): string | undefined => {
+  if (!val) return undefined;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && val !== null && '_id' in val) {
+    return String((val as { _id: unknown })._id);
+  }
+  return undefined;
+};
 
 export class BookingsController {
   async getAll(req: Request, res: Response) {
@@ -34,12 +47,13 @@ async create(req: Request, res: Response) {
     };
 
     const data = await service.create(bookingData);
+    await emitToRoles(STAFF_ROLES, RealtimeEvents.BookingDecision, data);
     res.json({ success: true, data });
   } catch (error: any) {
     console.error('Create booking error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 }
@@ -61,6 +75,11 @@ async create(req: Request, res: Response) {
       const { id } = req.params;
       const { status } = req.body;
       const updated = await service.updateStatus(id, status);
+      if (updated) {
+        const ownerId = refId(updated.userId);
+        if (ownerId) await emitToUser(ownerId, RealtimeEvents.BookingDecision, updated);
+        await emitToRoles(STAFF_ROLES, RealtimeEvents.BookingDecision, updated);
+      }
       res.json({ success: true, data: updated });
     } catch (error: any) {
       console.error('Approve booking error:', error);

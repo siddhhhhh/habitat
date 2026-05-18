@@ -8,7 +8,10 @@ export const registerSchema = Joi.object({
   password: Joi.string().min(6).required(),
   phone: Joi.string().optional(),
   role: Joi.string().valid(...Object.values(UserRole)).optional(),
-  flatNumber: Joi.string().optional()
+  flatNumber: Joi.string().optional(),
+  building: Joi.string().optional(),
+  occupantsCount: Joi.number().integer().min(1).optional(),
+  profile: Joi.string().optional()
 });
 
 export const loginSchema = Joi.object({
@@ -20,6 +23,9 @@ export const updateUserSchema = Joi.object({
   name: Joi.string().min(2).max(100).optional(),
   phone: Joi.string().optional(),
   flatNumber: Joi.string().optional(),
+  building: Joi.string().optional(),
+  occupantsCount: Joi.number().integer().min(1).optional(),
+  profile: Joi.string().optional(),
   role: Joi.string().valid(...Object.values(UserRole)).optional(),
   isActive: Joi.boolean().optional()
 });

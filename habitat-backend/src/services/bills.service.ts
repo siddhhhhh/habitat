@@ -6,11 +6,12 @@ interface GetBillsParams {
 }
 
 const ALLOWED_TRANSITIONS: Record<PaymentStatus, PaymentStatus[]> = {
-  [PaymentStatus.PENDING]: [PaymentStatus.PROCESSING, PaymentStatus.FAILED],
+  [PaymentStatus.PENDING]: [PaymentStatus.PROCESSING, PaymentStatus.FAILED, PaymentStatus.OVERDUE],
   [PaymentStatus.PROCESSING]: [PaymentStatus.COMPLETED, PaymentStatus.FAILED, PaymentStatus.PENDING],
   [PaymentStatus.COMPLETED]: [PaymentStatus.REFUNDED],
   [PaymentStatus.FAILED]: [PaymentStatus.PENDING],
   [PaymentStatus.REFUNDED]: [],
+  [PaymentStatus.OVERDUE]: [PaymentStatus.PROCESSING, PaymentStatus.FAILED],
 };
 
 export class BillStateError extends Error {
@@ -87,11 +88,32 @@ export class BillsService {
     return updated;
   }
 
+  /**
+   * Begin payment processing. A bill can enter PROCESSING from either PENDING
+   * (normal flow) or OVERDUE (resident pays a late bill). The atomic $in filter
+   * keeps the optimistic-lock guarantee.
+   */
   async markProcessing(billId: string, providerOrderId: string, provider = "razorpay") {
-    return this.transition(billId, PaymentStatus.PENDING, PaymentStatus.PROCESSING, {
-      provider,
-      providerOrderId,
-    });
+    const updated = await BillsModel.findOneAndUpdate(
+      { _id: billId, status: { $in: [PaymentStatus.PENDING, PaymentStatus.OVERDUE] } },
+      {
+        $set: {
+          status: PaymentStatus.PROCESSING,
+          provider,
+          providerOrderId,
+        },
+      },
+      { new: true }
+    );
+    if (!updated) {
+      throw new BillStateError(
+        "Bill not in a payable state (must be pending or overdue)",
+        billId,
+        undefined,
+        PaymentStatus.PROCESSING
+      );
+    }
+    return updated;
   }
 
   async markPaid(billId: string, providerPaymentId: string) {
@@ -104,6 +126,19 @@ export class BillsService {
 
   async markFailed(billId: string, from: PaymentStatus = PaymentStatus.PROCESSING) {
     return this.transition(billId, from, PaymentStatus.FAILED);
+  }
+
+  /**
+   * Flip all PENDING bills whose dueDate is before `cutoff` to OVERDUE in a
+   * single bulk write. Used by the daily overdue-scanner job. The filter is
+   * idempotent — running it twice has no effect on already-OVERDUE rows.
+   */
+  async markOverdueBefore(cutoff: Date) {
+    const result = await BillsModel.updateMany(
+      { status: PaymentStatus.PENDING, dueDate: { $lt: cutoff } },
+      { $set: { status: PaymentStatus.OVERDUE } }
+    );
+    return { matched: result.matchedCount, modified: result.modifiedCount };
   }
 
   /**

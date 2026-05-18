@@ -19,6 +19,9 @@ export const createUser = async (payload: Partial<IUser>): Promise<IUser> => {
     phone: payload.phone,
     role: payload.role ?? "resident",
     flatNumber: payload.flatNumber,
+    building: payload.building,
+    occupantsCount: payload.occupantsCount,
+    profile: payload.profile,
   });
 
   await user.save();

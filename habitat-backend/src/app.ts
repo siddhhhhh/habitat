@@ -3,10 +3,13 @@ import express, { Application } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import mongoSanitize from "express-mongo-sanitize";
-import morgan from "morgan";
+import pinoHttp from "pino-http";
 import mongoose from "mongoose";
 
-import { isProd } from "./config/env";
+import { isTest } from "./config/env";
+import { logger } from "./utils/logger";
+import { requestId } from "./middlewares/requestId.middleware";
+import { sentryErrorHandler, attachSentryRequestHandlers } from "./observability/sentry";
 
 import "./models/user.model";
 import "./models/amenities.model";
@@ -37,6 +40,22 @@ export function createApp(): Application {
 
   app.set("trust proxy", 1);
 
+  attachSentryRequestHandlers(app);
+
+  app.use(requestId);
+  if (!isTest) {
+    app.use(
+      pinoHttp({
+        logger,
+        genReqId: (req) => (req as any).id,
+        customSuccessMessage: (req, res) =>
+          `${req.method} ${req.url} ${res.statusCode}`,
+        customErrorMessage: (req, res) =>
+          `${req.method} ${req.url} ${res.statusCode}`,
+      })
+    );
+  }
+
   app.use(helmet());
 
   app.use(
@@ -60,8 +79,6 @@ export function createApp(): Application {
   app.use(express.urlencoded({ extended: true, limit: "100kb" }));
   app.use(mongoSanitize());
 
-  if (!isProd && process.env.NODE_ENV !== "test") app.use(morgan("dev"));
-
   app.get("/", (_req, res) => res.send("Habitat backend running"));
   app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
   app.get("/readyz", (_req, res) => {
@@ -80,6 +97,7 @@ export function createApp(): Application {
   app.use("/api/visitors", visitorsRoutes);
   app.use("/api/webhooks", webhooksRoutes);
 
+  app.use(sentryErrorHandler);
   app.use(errorHandler);
 
   return app;

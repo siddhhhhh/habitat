@@ -6,6 +6,7 @@ export enum PaymentStatus {
   COMPLETED = "completed",
   FAILED = "failed",
   REFUNDED = "refunded",
+  OVERDUE = "overdue",
 }
 
 export interface IBills extends Document {
@@ -19,6 +20,7 @@ export interface IBills extends Document {
   providerPaymentId?: string;
   gatewayRef?: string;
   paidAt?: Date;
+  period?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -40,10 +42,18 @@ const billsSchema = new Schema<IBills>(
     providerPaymentId: { type: String, index: true, sparse: true },
     gatewayRef: { type: String },
     paidAt: { type: Date },
+    period: { type: String },
   },
   { timestamps: true }
 );
 
 billsSchema.index({ user: 1, status: 1, dueDate: -1 });
+// Idempotency guard for the monthly bill-generator job — only one bill per
+// (user, period) can exist. Partial index so legacy bills without `period`
+// remain unaffected.
+billsSchema.index(
+  { user: 1, period: 1 },
+  { unique: true, partialFilterExpression: { period: { $exists: true } } }
+);
 
 export default mongoose.model<IBills>("Bills", billsSchema);

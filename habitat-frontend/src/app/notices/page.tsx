@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRealtime } from '@/contexts/RealtimeContext';
+import { RealtimeEvents } from '@/lib/realtimeEvents';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +19,7 @@ import toast from 'react-hot-toast';
 
 export default function NoticesPage() {
   const { user, hasPermission } = useAuth();
+  const { on: subscribeRealtime } = useRealtime();
 
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,6 +57,13 @@ export default function NoticesPage() {
     if (!hasPermission('notices:read')) return;
     fetchNotices();
   }, []);
+
+  // Live refresh when a committee/admin user publishes a notice elsewhere.
+  // The provider already toasts "New notice"; here we just keep the list fresh.
+  useEffect(() => {
+    const off = subscribeRealtime(RealtimeEvents.NoticeCreated, () => fetchNotices());
+    return () => off();
+  }, [subscribeRealtime]);
 
   const fetchNotices = async () => {
   try {

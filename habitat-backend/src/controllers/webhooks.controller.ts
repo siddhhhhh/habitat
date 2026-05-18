@@ -1,11 +1,9 @@
 import { Request, Response } from "express";
-import WebhookEvent from "../models/webhookEvent.model";
-import { BillsService, BillStateError } from "../services/bills.service";
+import WebhookEvent, { WebhookStatus } from "../models/webhookEvent.model";
 import { verifyWebhookSignature } from "../services/payments.service";
-import { razorpayWebhookConfigured } from "../config/env";
-import { PaymentStatus } from "../models/bills.model";
-
-const bills = new BillsService();
+import { razorpayWebhookConfigured, redisConfigured } from "../config/env";
+import { enqueueRazorpayEvent } from "../queues/webhooks.queue";
+import { processRazorpayEvent } from "../queues/webhooks.handlers";
 
 const isDuplicateKeyError = (err: any) => err && err.code === 11000;
 
@@ -26,12 +24,14 @@ interface RazorpayWebhookBody {
 /**
  * Razorpay webhook receiver.
  *
- * Idempotency layers:
- *   1. WebhookEvent.eventId has a unique index — duplicate deliveries from
- *      Razorpay's at-least-once retry are caught here and short-circuited.
- *   2. Bill state-machine transitions are guarded by current status (optimistic
- *      lock). If a payment.captured webhook arrives twice in close succession,
- *      the second transition no-ops gracefully.
+ * Flow:
+ *   1. Verify HMAC signature against the raw body.
+ *   2. Persist a WebhookEvent under a unique eventId (idempotency layer 1).
+ *   3. Enqueue async processing and ACK 200 OK — Razorpay's webhook timeout
+ *      is 5s, so we never let downstream Mongo writes block the response.
+ *
+ * If Redis is not configured (dev / portfolio without infra), fall back to
+ * inline processing so the end-to-end flow still works.
  */
 export const razorpayWebhook = async (req: Request, res: Response) => {
   if (!razorpayWebhookConfigured()) {
@@ -58,13 +58,14 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
   const body = req.body as RazorpayWebhookBody & { id?: string; event_id?: string };
   const eventId = (body.id || body.event_id || `${body.event}_${signature.slice(0, 16)}`) as string;
 
-  // Idempotent receipt: unique-index insert is atomic.
+  let event;
   try {
-    await WebhookEvent.create({
+    event = await WebhookEvent.create({
       provider: "razorpay",
       eventId,
       eventType: body.event ?? "unknown",
       payload: body,
+      status: WebhookStatus.RECEIVED,
     });
   } catch (err: any) {
     if (isDuplicateKeyError(err)) {
@@ -73,23 +74,16 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
     throw err;
   }
 
-  const payment = body.payload?.payment?.entity;
-  const billId = payment?.notes?.billId;
-
-  if (body.event === "payment.captured" && billId && payment) {
-    try {
-      await bills.markPaid(billId, payment.id);
-    } catch (err) {
-      if (!(err instanceof BillStateError)) throw err;
-      // Bill already moved on — fine, second delivery.
-    }
-  } else if (body.event === "payment.failed" && billId) {
-    try {
-      await bills.markFailed(billId, PaymentStatus.PROCESSING);
-    } catch (err) {
-      if (!(err instanceof BillStateError)) throw err;
-    }
+  if (redisConfigured()) {
+    await enqueueRazorpayEvent({ webhookEventId: String(event._id) });
+    return res.json({ success: true, message: "Queued" });
   }
 
-  return res.json({ success: true });
+  // No Redis — degrade to inline processing so the API still works in dev.
+  try {
+    await processRazorpayEvent({ data: { webhookEventId: String(event._id) } } as any);
+  } catch (err) {
+    console.error("[webhooks] inline processing failed:", (err as Error).message);
+  }
+  return res.json({ success: true, message: "Processed inline (no Redis)" });
 };

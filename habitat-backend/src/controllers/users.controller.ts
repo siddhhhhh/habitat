@@ -70,7 +70,7 @@ export const deleteUser = async (req: Request, res: Response) => {
 
 export const createUser = async (req: Request, res: Response) => {
   try {
-    const { name, email, password, phone, role, flatNumber } = req.body;
+    const { name, email, password, phone, role, flatNumber, building, occupantsCount, profile } = req.body;
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -86,6 +86,9 @@ export const createUser = async (req: Request, res: Response) => {
       phone,
       role,
       flatNumber,
+      building,
+      occupantsCount,
+      profile,
     });
 
     await user.save();

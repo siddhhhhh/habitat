@@ -1,8 +1,21 @@
 // controllers/issues.controller.ts
 import { Request, Response } from 'express';
 import { IssuesService } from '../services/issues.service';
+import { emitToRoles, emitToUser, RealtimeEvents } from '../realtime/events';
+import { UserRole } from '../utils/enums';
 
 const service = new IssuesService();
+
+const STAFF_ROLES = [UserRole.Admin, UserRole.Committee];
+
+const refId = (val: unknown): string | undefined => {
+    if (!val) return undefined;
+    if (typeof val === 'string') return val;
+    if (typeof val === 'object' && val !== null && '_id' in val) {
+        return String((val as { _id: unknown })._id);
+    }
+    return undefined;
+};
 
 export class IssuesController {
     async getAll(req: Request, res: Response) {
@@ -44,6 +57,7 @@ export class IssuesController {
             };
 
             const data = await service.create(issueData);
+            await emitToRoles(STAFF_ROLES, RealtimeEvents.IssueUpdated, data);
             res.status(201).json({ data });
         } catch (err: any) {
             console.error('Create issue error:', err);
@@ -55,6 +69,11 @@ export class IssuesController {
         try {
             const data = await service.update(req.params.id, req.body);
             if (!data) return res.status(404).json({ message: 'Issue not found' });
+            await emitToRoles(STAFF_ROLES, RealtimeEvents.IssueUpdated, data);
+            const reporterId = refId(data.reporter);
+            if (reporterId) await emitToUser(reporterId, RealtimeEvents.IssueUpdated, data);
+            const technicianId = refId(data.technician);
+            if (technicianId) await emitToUser(technicianId, RealtimeEvents.IssueUpdated, data);
             res.status(200).json({ data });
         } catch (err: any) {
             res.status(500).json({ message: err.message });

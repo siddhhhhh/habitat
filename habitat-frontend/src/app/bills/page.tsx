@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRealtime } from '@/contexts/RealtimeContext';
+import { RealtimeEvents } from '@/lib/realtimeEvents';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -18,6 +20,7 @@ import toast from 'react-hot-toast';
 
 export default function BillsPage() {
   const { user, hasPermission } = useAuth();
+  const { on: subscribeRealtime } = useRealtime();
 
   const [bills, setBills] = useState<Bill[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -90,6 +93,18 @@ export default function BillsPage() {
 
     fetchData();
   }, [user]);
+
+  // Refresh the bills list when the backend tells us a payment landed. The
+  // built-in toast in RealtimeProvider takes care of the user-facing message;
+  // this handler just keeps the table in sync without a manual refresh click.
+  useEffect(() => {
+    const offPaid = subscribeRealtime(RealtimeEvents.BillPaid, () => fetchBills());
+    const offFailed = subscribeRealtime(RealtimeEvents.BillFailed, () => fetchBills());
+    return () => {
+      offPaid();
+      offFailed();
+    };
+  }, [subscribeRealtime]);
 
   // ✅ Separate function for refetching
   const fetchBills = async () => {

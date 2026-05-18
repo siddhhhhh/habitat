@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import * as noticeService from "../services/notice.service";
+import { emitNoticeCreated } from "../realtime/events";
 
 export const createNotice = async (req: Request, res: Response) => {
   try {
@@ -17,7 +18,9 @@ export const createNotice = async (req: Request, res: Response) => {
       audience
     });
 
-  res.status(201).json({ data: notice });
+    await emitNoticeCreated(audience as string[], notice);
+
+    res.status(201).json({ data: notice });
   } catch (err: any) {
     console.error("Error creating notice:", err);
     res.status(500).json({ message: err.message });
